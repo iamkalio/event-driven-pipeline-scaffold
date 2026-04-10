@@ -1,0 +1,125 @@
+services:
+  zookeeper:
+    image: bitnami/zookeeper:latest
+    environment:
+      ALLOW_ANONYMOUS_LOGIN: 'yes'
+    healthcheck:
+      test: ["CMD-SHELL", "zkServer.sh status || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - zookeeper_data:/bitnami/zookeeper
+
+  kafka:
+    image: bitnami/kafka:latest
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    environment:
+      KAFKA_CFG_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_CFG_LISTENERS: PLAINTEXT://:9092
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      ALLOW_PLAINTEXT_LISTENER: 'yes'
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+    volumes:
+      - kafka_data:/bitnami/kafka
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: oligo
+      POSTGRES_USER: oligo
+      POSTGRES_PASSWORD: oligo
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U oligo -d oligo"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+
+  redis:
+    image: redis:7
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  prometheus:
+    image: prom/prometheus:latest
+    command: ["--config.file=/etc/prometheus/prometheus.yml"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9090/-/healthy >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+
+  api:
+    image: ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+    working_dir: /app
+    command: ["sh", "-c", "uv sync && uv run uvicorn src.main:app --host 0.0.0.0 --port 8000"]
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)""]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./:/app
+      - uv_cache:/root/.cache/uv
+
+  consumer:
+    image: ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+    working_dir: /app
+    command: ["sh", "-c", "uv sync && uv run python -m src.streaming.router"]
+    env_file:
+      - .env
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./:/app
+      - uv_cache:/root/.cache/uv
+
+volumes:
+  zookeeper_data:
+  kafka_data:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  uv_cache:
