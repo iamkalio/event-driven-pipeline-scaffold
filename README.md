@@ -1,6 +1,6 @@
-# oligo-backend
+# Intro
 
-`oligo-backend` is a production-grade scaffold for a runtime security platform backend inspired by Oligo Security. It demonstrates high-volume Kafka ingestion, a Redis-backed stream join and idempotency layer, PostgreSQL storage with partitioning-aware repositories, multi-tier AI processing hooks, alert fan-out to Slack and Jira, and a FastAPI surface for dashboards and health checks.
+This project is a production-grade scaffold for a runtime platform backend. It demonstrates high-volume Kafka ingestion, a Redis-backed stream join and idempotency layer, PostgreSQL storage with partitioning-aware repositories, multi-tier AI processing hooks, alert fan-out to Slack and Jira, and a FastAPI surface for dashboards and health checks.
 
 ## Architecture
 
